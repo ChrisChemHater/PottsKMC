@@ -32,8 +32,8 @@ public:
 	void resize(int size);
 	~FlipCount();
 	int size;
-	bool* flipAllows;  // size = (2 * gamma + 1) * (2 * q - 1), ��¼һ��ԭ���Ƿ�����ĳ�෭ת
-	bool have(int flipInd);  // �ж�ĳ�෭ת�Ƿ���Խ���
+	bool* flipAllows;  // size = (2 * gamma + 1) * (2 * q - 1), if the flip class exists
+	bool have(int flipInd);
 };
 
 struct Frame
@@ -63,26 +63,26 @@ public:
 
 	double* DeltaHs;  // size = (2 * gamma + 1) * (2 * q - 1), deltaH for every flip classes
 	int* sigma;  // N * M matrix
-	Frame frame;  // ��¼��һ�η�ת��Ϣ���ͱ�״̬��waiting time�Լ�����
+	Frame frame;  // 
 
-	void initialize();  // ��ʼ�����б��������״μ���frame
-	void step();  // ����frame�еĽ������״̬���������µ�frame
-	double getEnergy();  // ����ÿ�β������¼���������Ӧ����û���ۻ������ۼӷ�ʽ����ÿ��һ��ʱ��͵��ô˺�����ȷ����
+	void initialize();  // initialize any state, and make the first suggestion
+	void step();  // change state as suggested, and make new suggestion
+	double getEnergy();  // the method calculate energy based on current sigma matrix
 private:
 	const int nbrCNum;
 	const int spinCNum;
-	FlipCount* _flipCountMap;  // ÿ��ԭ�ӵ�������ת����
-	int* _flipCountPerClass;  // ÿ����ת���Ͷ�Ӧ������
-	double* _Pflips;  // ÿ����ת���Ͷ�Ӧ�ĸ���
-	int* _candAtomInds;  // ����suggest������,��ź�ѡ��תԭ������.���ⷴ�������ڴ�
-	double _deltaE; // �´ε������仯
-	double _cdeltaE;  // Kahan����еĵ�λ����
+	FlipCount* _flipCountMap;  // N * M, flipCount on every atom
+	int* _flipCountPerClass;  // (2 * gamma + 1) * (2 * q - 1), number of allowed flip of every flip class
+	double* _Pflips;  // (2 * gamma + 1) * (2 * q - 1), probability of each flip class
+	int* _candAtomInds;  // N * M, container of atoms candidates.
+	double _deltaE; // (2 * gamma + 1) * (2 * q - 1), delta E of each flip class
+	double _cdeltaE;  // The compensation item in Kahan accumulation.
 
 	void initializeSigma();
 	void initializeDeltaHs();
 	void initializeFlipCounts();
 	void initializePflips();
-	void updateFCandPflips();  // ����frame����flipCountMap��Pflips
+	void updateFCandPflips();  // update FlipCountMap and Pflips after update state
 	void updateEnergy();
 
 	int getEqualNbrNum(int n, int m);
@@ -91,15 +91,15 @@ private:
 	void calAtomFlipCount(int n, int m, int spin);
 	Neighbors getNeighbors(int n, int m);
 
-	void suggest(); // �ɸ��ʾ��������һ�η�ת�����������
+	void suggest(); // make new suggestion: flip which atom to which spin, and calculate waiting time
 	double calWaitingTime();
 };
 
 int choiceProb(double* prob, int size, random_engine& rng);
 int choice(int* choiceList, int size, random_engine& rng);
 
-pair<int*, Frame*> simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, int recordFreq, bool silent);  // ������, ���س�̬��ģ��켣
-pair<int*, Frame*> simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, Frame* traj, int recordFreq, bool silent);  // ������, ���س�̬��ģ��켣
+pair<int*, Frame*> simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, int recordFreq, bool silent);
+pair<int*, Frame*> simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, Frame* traj, int recordFreq, bool silent);
 void simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, ostream& _initStr, ostream& _traj, int recordFreq, bool silent);
 
 enum TrajType

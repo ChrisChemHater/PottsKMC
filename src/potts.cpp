@@ -112,12 +112,9 @@ void PottsModel::initializeDeltaHs()
 void PottsModel::initializeFlipCounts()
 {
 	_flipCountMap = new FlipCount[N * M];
-	// 为每个FlipCount对象分配空间,并初始化为false
 	for (int i = 0; i < N * M; ++i) {
 		_flipCountMap[i].resize(nbrCNum * spinCNum);
 	}
-	// 计算每个原子的flipCount
-	int equalNbrNum;
 	for (int n = 0; n < N; ++n) {
 		for (int m = 0; m < M; ++m) {
 			calAtomFlipCount(n, m);
@@ -162,7 +159,7 @@ void PottsModel::updateFCandPflips()
 
 void PottsModel::updateEnergy()
 {
-	// Kahan求和更新能量
+	// Kahan accumulation
 	double y = _deltaE - _cdeltaE;
 	double t = frame.E + y;
 	_cdeltaE = t - frame.E - y;
