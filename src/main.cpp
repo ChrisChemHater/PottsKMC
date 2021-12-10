@@ -12,7 +12,7 @@ const char* artKMC =
 "                                             \\|_________|                                            \n"
 "                                                                                                     \n"
 "########################################################################################################\n"
-"Author: 潘高翔 北京大学化学与分子工程学院\n";
+"Author: Gaoxiang Pan, CCME\n";
 
 pair<int*, Frame*> simulate(int steps, int N, int M, int q, double J, double h, double T, double tau, int randomSeed, int recordFreq, bool silent)
 {
@@ -61,13 +61,13 @@ void simulate(int steps, int N, int M, int q, double J, double h, double T, doub
 		writeTrajHead(_traj, FullState, model.sigma, N, M);
 		_traj << 0 << ' ';
 		writeState(_traj, model.sigma, N * M);
-		_traj << model.frame.dt << ' ' << model.frame.E << '\n';
+		_traj << model.frame.t << ' ' << model.frame.dt << ' ' << model.frame.E << '\n';
 		for (int i = 1; i < steps + 1; ++i) {
 			model.step();
 			if (i % recordFreq == 0) {
 				_traj << i << ' ';
 				writeState(_traj, model.sigma, N * M);
-				_traj << model.frame.dt << ' ' << model.frame.E << '\n';
+				_traj << model.frame.t << ' ' << model.frame.dt << ' ' << model.frame.E << '\n';
 				if (!silent)
 					printf("step %d/%d, %f%%, Energy = %e\n", i, steps, (double)i * 100 / steps, model.frame.E);
 			}
@@ -91,7 +91,7 @@ void simulate(int steps, int N, int M, int q, double J, double h, double T, doub
 void parse_args(int& N, int& M, int& q, int& steps, int& recordFreq, int& randomSeed, double& J, double& T, double& tau, double& h, string& jobName, bool& silent, int argc, char* argv[])
 {
 	try {
-		TCLAP::CmdLine cmd("KMC simulator for Potts model\nAuthor: 潘高翔，北京大学化学与分子工程学院", ' ', _VERSION, true);
+		TCLAP::CmdLine cmd("KMC simulator for Potts model, Author: Gaoxiang Pan, CCME", ' ', _VERSION, true);
 		TCLAP::ValueArg<int> N_("N", "nrows", "", true, 0, "int", cmd);
 		TCLAP::ValueArg<int> M_("M", "ncols", "if not defined, take N as its value", false, -1, "int", cmd);
 		TCLAP::ValueArg<int> q_("q", "spin-classes", "", true, 0, "int", cmd);

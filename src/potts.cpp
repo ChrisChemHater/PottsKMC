@@ -43,7 +43,7 @@ bool FlipCount::have(int flipInd)
 
 PottsModel::PottsModel(int N, int M, int q, double J, double h, double T, double tau, int randomSeed)
 	: N(N), M(M), q(q), J(J), h(h), T(T), tau(tau), randomSeed(randomSeed), rng(randomSeed), initialized(false),
-	modelSize(N * M), flipClassNum((2 * GAMMA + 1) * (2 * q - 1)), _deltaE(0.), _cdeltaE(0.),
+	modelSize(N * M), flipClassNum((2 * GAMMA + 1) * (2 * q - 1)), _deltaE(0.), _cdeltaE(0.), _ct(0.),
 	DeltaHs(nullptr), sigma(nullptr), _flipCountMap(nullptr), _flipCountPerClass(nullptr), _Pflips(nullptr), _candAtomInds(nullptr),
 	nbrCNum(2 * GAMMA + 1), spinCNum(2 * q - 1) {}
 
@@ -67,6 +67,7 @@ void PottsModel::initialize()
 	initializePflips();
 	_candAtomInds = new int[modelSize];
 	frame.E = getEnergy();
+	frame.t = 0.;
 	suggest();
 	initialized = true;
 }
@@ -76,6 +77,7 @@ void PottsModel::step()
 	sigma[frame.i * M + frame.j] = frame.nextSpin;
 	updateFCandPflips();
 	updateEnergy();
+	updateTime();
 	suggest();
 }
 
@@ -164,6 +166,15 @@ void PottsModel::updateEnergy()
 	double t = frame.E + y;
 	_cdeltaE = t - frame.E - y;
 	frame.E = t;
+}
+
+void PottsModel::updateTime()
+{
+	// Kahan accumulation
+	double y = frame.dt - _ct;
+	double t = frame.t + y;
+	_ct = t - frame.t - y;
+	frame.t = t;
 }
 
 int PottsModel::getEqualNbrNum(int n, int m)
@@ -255,7 +266,7 @@ Neighbors::Neighbors(int u, int d, int l, int r) :u(u), d(d), l(l), r(r) {}
 
 ostream& operator<<(ostream& _ostr, const Frame& frame)
 {
-	_ostr << frame.i << ' ' << frame.j << ' ' << frame.nextSpin << ' ' << frame.dt << ' ' << frame.E << '\n';
+	_ostr << frame.i << ' ' << frame.j << ' ' << frame.nextSpin << ' ' << frame.t << ' ' << frame.dt << ' ' << frame.E << '\n';
 	return _ostr;
 }
 
@@ -268,22 +279,15 @@ ostream& writeTrajHead(ostream& _ostr, TrajType _type, int* sigma, int N, int M)
 		_ostr << "# Initial State = ";
 		writeState(_ostr, sigma, N * M);
 		_ostr << '\n';
-		_ostr << "# row col nextSpin dt Energy\n";
+		_ostr << "# row col nextSpin t dt Energy\n";
 		break;
 	case FullState:
 		_ostr << "# type = FullState\n";
-		_ostr << "# REMARK: each frame is one line, contains stepIndex, state, dt and Energy\n";
+		_ostr << "# REMARK: each frame is one line, contains stepIndex, state, t, dt and Energy\n";
 		break;
 	default:
 		break;
 	}
-	return _ostr;
-}
-
-ostream& writeTraj(ostream& _ostr, const Frame* traj, int trajSize)
-{
-	for (int i = 0; i < trajSize; i++)
-		_ostr << *(traj + i);
 	return _ostr;
 }
 

@@ -42,6 +42,7 @@ struct Frame
 	int i;  // row
 	int j;  // col
 	int nextSpin;  // sigma[i, j] change to nextSpin
+	double t;  // starting time of the frame
 	double dt;  // waiting time
 	double E;  // Energy
 };
@@ -77,6 +78,7 @@ private:
 	int* _candAtomInds;  // N * M, container of atoms candidates.
 	double _deltaE; // (2 * gamma + 1) * (2 * q - 1), delta E of each flip class
 	double _cdeltaE;  // The compensation item in Kahan accumulation.
+	double _ct;  // The compensation item in Kahan accumulation of starting time.
 
 	void initializeSigma();
 	void initializeDeltaHs();
@@ -84,6 +86,7 @@ private:
 	void initializePflips();
 	void updateFCandPflips();  // update FlipCountMap and Pflips after update state
 	void updateEnergy();
+	void updateTime();
 
 	int getEqualNbrNum(int n, int m);
 	int getEqualNbrNum(int n, int m, int spin);
@@ -110,6 +113,5 @@ enum TrajType
 
 ostream& operator<<(ostream& _ostr, const Frame& frame);
 ostream& writeTrajHead(ostream& _ostr, TrajType _type, int* sigma, int N, int M);
-ostream& writeTraj(ostream& _ostr, const Frame* traj, int trajSize);
 ostream& writeState(ostream& _ostr, int* sigma, int _size);
 ostream& writeState(ostream& _ostr, int* sigma, int N, int M);
