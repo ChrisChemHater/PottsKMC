@@ -1,7 +1,7 @@
 #-*- coding:utf-8 -*-
 import re
 import os
-from typing import List, Union, Tuple
+from typing import Callable, List, Union, Tuple
 import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
@@ -63,7 +63,7 @@ class PottsExperiment:
 					raise ValueError("Unvalid log file")
 				if line == "PARAMS\n":
 					break
-			rawParams = re.findall(r"^\w+\s*=\s*\w+.*$",
+			rawParams = re.findall(r"^\w+\s*=\s*\S+.*$",
 								   r.read(),
 								   flags=re.MULTILINE)
 		for rawParam in rawParams:
@@ -153,37 +153,69 @@ class PottsResult:
 		self.trajT = rawTraj[:, N*M+1].astype(np.double)
 		self.trajDt = rawTraj[:, N*M+2].astype(np.double)
 		self.trajEnergy = rawTraj[:, N*M+3].astype(np.double)
+
+	def calculate_mean(self, quantity:np.ndarray) -> float:
+		"""
+		计算平均值的估计。quantity第0维应有steps的长度
+		"""
+		broadcast_shape = tuple([-1] + [1] * (len(quantity.shape) - 1))
+		return (quantity * self.trajDt.reshape(broadcast_shape)).sum(axis=0) / self.totalSampleTime
 	
-	def recalculate_average_energy(self) -> float:
-		self.properties["aveEnergy"] = (self.trajEnergy * self.trajDt).sum() / self.totalSampleTime
+	def calculate_var(self, quantity:np.ndarray) -> float:
+		"""
+		计算方差的估计。quantity第0维应有steps的长度
+		"""
+		mean = self.calculate_mean(quantity)
+		return self.calculate_mean((quantity - mean) ** 2)
+
+	def calculate_var_of_mean(self, quantity:np.ndarray) -> float:
+		"""
+		计算平均值的方差的估计(计算平均值时的随机误差)。quantity第0维应有steps的长度
+		"""
+		broadcast_shape = tuple([-1] + [1] * (len(quantity.shape) - 1))
+		netQuantity = quantity - self.calculate_mean(quantity)
+		return ((netQuantity * self.trajDt.reshape(broadcast_shape)) ** 2).sum(axis=0) / self.totalSampleTime ** 2
+
+	def recalculate_average_energy(self) -> Tuple[float, float]:
+		aveE = self.calculate_mean(self.trajEnergy)
+		aveE_std = self.calculate_var_of_mean(self.trajEnergy) ** 0.5
+		self.properties["aveEnergy"] = (aveE, aveE_std)
 		return self.properties["aveEnergy"]
 
-	def get_average_energy(self) -> float:
+	def get_average_energy(self) -> Tuple[float, float]:
 		if "aveEnergy" in self.properties:
 			return self.properties["aveEnergy"]
-		return self.recalculate_spatial_correlation()
+		return self.recalculate_average_energy()
 	
-	def recalculate_heat_capacity(self) -> float:
+	def recalculate_heat_capacity(self) -> Tuple[float, float]:
 		N, M = self.params['N'], self.params['M']
-		varH = ((self.trajEnergy - self.recalculate_average_energy()) ** 2 * self.trajDt).sum() / self.totalSampleTime
-		self.properties["heatCapacity"] = self.kB / (N * M * self.params['T'] ** 2) * varH
+		meanE = self.calculate_mean(self.trajEnergy)
+		netE2 = (self.trajEnergy - meanE) ** 2
+		varH = self.calculate_mean(netE2)
+		varH_std = self.calculate_var_of_mean(netE2) ** 0.5
+		factor = self.kB / (N * M * self.params['T'] ** 2)
+		self.properties["heatCapacity"] =  (varH * factor, varH_std * factor)
 		return self.properties["heatCapacity"]
 	
-	def get_heat_capacity(self) -> float:
+	def get_heat_capacity(self) -> Tuple[float, float]:
 		if "heatCapacity" in self.properties:
 			return self.properties["heatCapacity"]
-		return self.recalculate_spatial_correlation()
+		return self.recalculate_heat_capacity()
 	
-	def recalculate_magnetization(self) -> float:
-		self.properties["magnetization"] = (self.traj.mean(axis=(1,2)) * self.trajDt).sum() / self.totalSampleTime
+	def recalculate_magnetization(self) -> Tuple[float, float]:
+		N, M = self.params['N'], self.params['M']
+		mean1M = self.traj.mean(axis=(1,2))
+		meanM = self.calculate_mean(mean1M)
+		meanM_std = (self.calculate_var_of_mean(mean1M) / (N * M)) ** 0.5
+		self.properties["magnetization"] = (meanM, meanM_std)
 		return self.properties["magnetization"]
 	
-	def get_magnetication(self):
+	def get_magnetication(self) -> Tuple[float, float]:
 		if "magnetization" in self.properties:
 			return self.properties["magnetization"]
-		return self.recalculate_spatial_correlation()
+		return self.recalculate_magnetization()
 	
-	def recalculate_spatial_correlation(self, cutoff:Union[int, Tuple[int]] = None) -> np.ndarray:
+	def recalculate_spatial_correlation(self, cutoff:Union[int, Tuple[int]] = None) -> Tuple[np.ndarray, np.ndarray]:
 		"""
 		计算空间关联。
 		Arguments:
@@ -198,13 +230,14 @@ class PottsResult:
 		else:
 			Nmax, Mmax = cutoff
 		correlations = np.zeros((Nmax, Mmax), dtype=np.float64)
+		correlations_std = np.zeros((Nmax, Mmax), dtype=np.float64)
 		for i in range(Nmax):
 			for j in range(Mmax):
-				correlations[i, j] = self._calculate_spatial_correlation(i, j)
-		self.properties["spatialCorrelation"] = correlations
+				correlations[i, j], correlations_std[i, j] = self._calculate_spatial_correlation(i, j)
+		self.properties["spatialCorrelation"] = (correlations, correlations_std)
 		return correlations
 	
-	def get_spatial_correlation(self, cutoff:Union[int, Tuple[int]] = None) -> np.ndarray:
+	def get_spatial_correlation(self, cutoff:Union[int, Tuple[int]] = None) -> Tuple[np.ndarray, np.ndarray]:
 		"""
 		计算空间关联。
 		Arguments:
@@ -222,14 +255,18 @@ class PottsResult:
 			return self.properties["spatialCorrelation"]
 		return self.recalculate_spatial_correlation(cutoff)
 	
-	def _calculate_spatial_correlation(self, i:int, j:int) -> float:
+	def _calculate_spatial_correlation(self, i:int, j:int) -> Tuple[float, float]:
+		N, M = self.params['N'], self.params['M']
 		shiftedTraj = np.roll(np.roll(self.traj, -i, axis=1), -j, axis=2)
-		aveSigma = (self.traj * self.trajDt[:, np.newaxis, np.newaxis]).sum(axis=0) / self.totalSampleTime
+		aveSigma = self.calculate_mean(self.traj)
 		aveSigmaShifted = np.roll(np.roll(aveSigma, -i, axis=0), -j, axis=1)
-		corr = ((shiftedTraj * self.traj) * self.trajDt[:, np.newaxis, np.newaxis]).sum(axis=0) / self.totalSampleTime
-		return (corr - aveSigma * aveSigmaShifted).mean()
+		netCorrTraj = shiftedTraj * self.traj - aveSigma * aveSigmaShifted
+		corrMean = netCorrTraj.mean(axis=(1,2))
+		corr = self.calculate_mean(corrMean)
+		corr_std = (self.calculate_var_of_mean(corrMean) / (N * M)) ** 0.5
+		return (corr, corr_std)
 	
-	def recalculate_lambda(self, cutoff:int = None) -> np.ndarray:
+	def recalculate_lambda(self, cutoff:int = None) -> Tuple[np.ndarray, np.ndarray]:
 		"""
 		计算四重对称空间关联。即Lambda[k] = mean(Corr[0, k], Corr[0, -k], Corr[k, 0], Corr[-k, 0])
 		由于算法中Corr[0, k] = Corr[0, -k], Corr[k, 0] = Corr[-k, 0]，实际计算中仅取Corr[0, k]和Corr[k, 0]的平均
@@ -240,12 +277,20 @@ class PottsResult:
 		"""
 		if cutoff is None:
 			Nmax = min(self.params['N'] // 2, self.params['M'] // 2)
-		VCorr = np.array([self._calculate_spatial_correlation(i, 0) for i in range(Nmax)])
-		HCorr = np.array([self._calculate_spatial_correlation(0, j) for j in range(Nmax)])
-		self.properties["Lambda"] = (VCorr + HCorr) / 2
+
+		VCorr = np.zeros(Nmax)
+		VCorr_std = np.zeros(Nmax)
+		for i in range(Nmax):
+			VCorr[i], VCorr_std[i] = self._calculate_spatial_correlation(i, 0)
+		HCorr = np.zeros(Nmax)
+		HCorr_std = np.zeros(Nmax)
+		for j in range(Nmax):
+			HCorr[j], HCorr_std[j] = self._calculate_spatial_correlation(0, j)
+
+		self.properties["Lambda"] = ((VCorr + HCorr) / 2, ((VCorr_std ** 2 + HCorr_std ** 2) / 2) ** 0.5)
 		return self.properties["Lambda"]
 	
-	def get_lambda(self, cutoff:int = None) -> np.ndarray:
+	def get_lambda(self, cutoff:int = None) -> Tuple[np.ndarray, np.ndarray]:
 		"""
 		计算四重对称空间关联。即Lambda[k] = mean(Corr[0, k], Corr[0, -k], Corr[k, 0], Corr[-k, 0])
 		由于算法中Corr[0, k] = Corr[0, -k], Corr[k, 0] = Corr[-k, 0]，实际计算中仅取Corr[0, k]和Corr[k, 0]的平均
@@ -256,7 +301,7 @@ class PottsResult:
 		"""
 		if cutoff is None:
 			Nmax = min(self.params['N'] // 2, self.params['M'] // 2)
-		if ("Lambda" in self.properties) and Nmax == len(self.properties["lambda"]):
+		if ("Lambda" in self.properties) and Nmax == len(self.properties["Lambda"]):
 			return self.properties["Lambda"]
 		return self.recalculate_lambda(cutoff)
 
@@ -268,8 +313,7 @@ class PottsResult:
 	
 	def plot_lambda(self, ax):
 		Lamb = self.properties["Lambda"]
-		plot = ax.plot(np.arange(len(Lamb)), Lamb, "-k", lw=0.7)
-		ax.plot(np.arange(len(Lamb)), Lamb, ".k", markersize=5.0)
+		plot = ax.errorbar(np.arange(len(Lamb[0])), Lamb[0], yerr=Lamb[1], fmt="-k", lw=0.7, capsize=5)
 		ax.set_xlabel("k (distance)")
 		ax.set_ylabel("Spatial Correlation")
 		return plot
@@ -308,8 +352,20 @@ def writeBatchFile(expr:PottsExperiment, paramList:List[dict], jobFile:str, batc
 	writer.write("wait\n")
 	writer.close()
 
+def writeBatchFilePws(expr:PottsExperiment, paramList:List[dict], jobFile:str, batchSize:int=-1):
+	"""
+	如果batchSize有设定，则每batchSize个任务设置一个join点
+	"""
+	writer = open(jobFile, "wt", encoding="gbk")
+	for i, params in enumerate(paramList, start=1):
+		writer.write(f"Start-Job -InitializationScript {{Set-Location {os.path.abspath(os.path.dirname(jobFile))}}} -ScriptBlock{{{expr.get_command(params)}}}\n")
+		if batchSize > 0 and i % batchSize == 0:
+			writer.write("Get-Job | Wait-Job\n")
+	writer.write("Get-Job | Wait-Job\n")
+	writer.close()
+
 def test():
-	res = PottsResult("potts_N20_T5_q3")
+	res = PottsResult("Potts_q3_B_-0.300_T0.995", r"outFiles\magnetic_q3")
 	res.run_all_analysis()
 	res.summary()
 
